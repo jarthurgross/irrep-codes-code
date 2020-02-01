@@ -1,16 +1,16 @@
+from pkg_resources import resource_string
 import pickle
 from functools import reduce
+
 import numpy as np
 from scipy.linalg import expm
 from scipy.interpolate import interp1d
 import sympy as sy
-import quaternion
 from sympy.physics.quantum.spin import WignerD
-import mayavi_spin_wigner as msw
-from qinfo import wigner
+import quaternion
 
-with open('data/clifford-h-s-decomp.txt', 'r') as f:
-    lines = f.read()
+lines = resource_string(__name__, 'data/clifford-h-s-decomp.txt').decode('utf8')
+qubit_Cliff_decomps = str.splitlines(lines)
 
 def Jm_mat(s):
     dim = int(2*s + 1)
@@ -33,8 +33,6 @@ def Jz_mat(s):
 
 def rho_from_ket(ket):
     return np.outer(ket, ket.conj())
-
-qubit_Cliff_decomps = str.splitlines(lines)
 
 def Jm_mat_sym(s):
     dim = int(2*s + 1)
