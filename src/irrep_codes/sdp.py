@@ -94,3 +94,13 @@ def create_encoding_SDPs(error_tensors, ket0, ket1):
         Ps.append(P)
 
     return Ps
+
+def get_mult_2_code_kets(ket0_a, ket0_b, theta, phi, sigx_rep):
+    ket0 = np.cos(theta/2)*ket0_a + np.exp(1.j*phi)*np.sin(theta/2)*ket0_b
+    ket1 = sigx_rep @ ket0
+    return ket0, ket1
+
+def get_mult_2_optimal_recovery_fidelity(error_tensor, ket0_a, ket0_b, theta, phi, sigx_rep):
+    SDP = create_encoding_SDPs([error_tensor], *get_mult_2_code_kets(ket0_a, ket0_b, theta, phi, sigx_rep))[0]
+    SDP_soln = SDP.solve()
+    return SDP_soln['obj']
