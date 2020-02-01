@@ -2,6 +2,8 @@ from setuptools import setup
 
 requires = [
         'numpy',
+        'scipy',
+        'sympy',
         'picos',
         'cvxopt',
         'qinfo @ git+https://github.com/jarthurgross/numpy-quantum-info',
