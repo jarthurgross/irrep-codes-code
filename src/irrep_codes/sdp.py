@@ -1,3 +1,5 @@
+import itertools as it
+
 import numpy as np
 import picos as pic
 import cvxopt as cvx
