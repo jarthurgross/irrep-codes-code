@@ -6,6 +6,7 @@ requires = [
         'sympy',
         'picos',
         'cvxopt',
+        'joblib',
         'numpy-quaternion',
         'qinfo @ git+https://github.com/jarthurgross/numpy-quantum-info',
         'pysme @ git+https://git@github.com/CQuIC/pysme',
