@@ -30,7 +30,7 @@ def get_process_tensors_from_lindblad(integrator, times, solve_ivp_kwargs=None,
     else:
         soln_jks = Parallel(n_jobs=n_jobs)(delayed(get_non_herm_soln_time_ind)
                                            (integrator, rho0, times,
-                                            soln_ivp_kwargs)
+                                            solve_ivp_kwargs)
                                            for rho0 in it.chain(*rho0_jks))
         soln_jks = [soln_jks[dim*n:dim*(n+1)] for n in range(dim)]
     rhos_jks = [[soln.get_density_matrices() for soln in soln_ks]
