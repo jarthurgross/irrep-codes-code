@@ -54,53 +54,115 @@ def make_encoding_process_tensor(kets):
     return np.array([[np.outer(ket1, ket2.conj()) for ket2 in kets]
                      for ket1 in kets])
 
-def get_fidelity_observable(encode_error_tensor):
-    s = encode_error_tensor.shape
-    dim_logical = s[0]
-    dim_encoded = s[2]
-    return (dim_encoded/dim_logical**2)*np.transpose(
-        encode_error_tensor, (1, 3, 0, 2)).reshape((s[1]*s[3], s[0]*s[2]))
+def get_fidelity_observable(proc_tensor, dim):
+    '''Observable whose expectation value w.r.t. the Choi matrix of another
+    process is the fidelity of the composed processes.
 
-def create_encoding_SDPs(error_tensors, ket0, ket1):
-    encoding_tensor = make_encoding_process_tensor([ket0, ket1])
-    encode_error_tensors = [supops.compose_process_tensors(
-                                    error_tensor, encoding_tensor)
-                            for error_tensor in error_tensors]
-    fidelity_observables = [get_fidelity_observable(encode_error_tensor)
-                            for encode_error_tensor in encode_error_tensors]
-    d_logical = 2
-    d_encoded = ket0.shape[0]
-    I_logical = np.eye(d_logical)
+    '''
+    s = proc_tensor.shape
+    return np.transpose(proc_tensor, (3, 1, 2, 0)).reshape(s[3]*s[1], s[2]*s[0])/dim**2
 
-    Ps = []
-    for fidelity_observable in fidelity_observables:
-        P = pic.Problem()
-        # Choi state for the recovery map
-        X = P.add_variable('X',(d_logical*d_encoded, d_logical*d_encoded),'hermitian')
-        P.add_constraint(X >> 0)
-        for j in range(d_encoded):
-            for k in range(j, d_encoded):
-                E_jk = np.zeros((d_encoded, d_encoded))
-                E_jk[j,k] = 1
-                P.add_constraint((np.kron(I_logical, E_jk)|X)
-                                 == (1 if j==k else 0)/d_encoded)
+def create_proc_fid_opt_SDP(fidelity_observable, dim_in, dim_out):
+    '''Create an SDP that optimizes the process fidelity.
 
-        # Observable for the fidelity of the recovery operation given an
-        # encoding and error channel
-        C = cvx.matrix(fidelity_observable)
+    The process we are optimizing over is composed with some other process,
+    encoded in the fidelity observable, and we are optimizing the fidelity of
+    the combined process with respect to the identity process.
 
-        # Find the Choi state for the recovery map that optimizes fidelity
-        P.set_objective('max', C|X)
-        Ps.append(P)
+    '''
+    assert fidelity_observable.shape[0] == dim_in*dim_out
+    # Identity on the output Hilbert space
+    I_out = np.eye(dim_out)
+    P = pic.Problem()
+    # Choi state for the recovery map (chi / dim_in)
+    X = P.add_variable('X',(dim_out*dim_in, dim_out*dim_in),'hermitian')
+    # Add completely-positive constraint
+    P.add_constraint(X >> 0)
+    # Add trace-preserving constraint: tr_out(chi/dim_in) = I_in/dim_in
+    Y = {}
+    for j in range(dim_in):
+        for k in range(j, dim_in):
+            E_jk = np.zeros((dim_in, dim_in))
+            E_jk[j,k] = 1
+            Y[j,k] = np.kron(E_jk, I_out)
+            P.add_constraint((Y[j,k]|X)
+                             == (1 if j==k else 0))
+
+    return P
+
+def create_decoding_optimizing_SDP(error_proc_tensor, encode_choi_mat,
+        dim_logical):
+    '''Create an SDP to optimize the decoding for a given code and error.
+
+    '''
+    dim_encoded = error_proc_tensor.shape[0]
+    encode_proc_tensor = supops.choi_mat_to_proc_tensor(encode_choi_mat,
+                                                        dim_in=dim_logical)
+    encode_error_proc_tensor = supops.proc_tensor_compose(error_proc_tensor,
+                                                          encode_proc_tensor)
+    fidelity_observable = get_fidelity_observable(encode_error_proc_tensor,
+                                                  dim_logical)
+    return create_proc_fid_opt_SDP(fidelity_observable, dim_in=dim_encoded,
+                                   dim_out=dim_logical)
+
+def create_encoding_optimizing_SDP(error_proc_tensor, decode_choi_mat):
+    '''Create an SDP to optimize the encoding for a given error and decoding.
+
+    '''
+    dim_encoded = error_proc_tensor.shape[0]
+    decoding_proc_tensor = supops.choi_mat_to_proc_tensor(decode_choi_mat,
+                                                          dim_in=dim_encoded)
+    dim_logical = decoding_proc_tensor.shape[2]
+    error_decode_proc_tensor = supops.proc_tensor_compose(decoding_proc_tensor,
+                                                          error_proc_tensor)
+    fidelity_observable = get_fidelity_observable(error_decode_proc_tensor,
+                                                  dim_logical)
+    return create_proc_fid_opt_SDP(fidelity_observable, dim_in=dim_logical,
+                                   dim_out=dim_encoded)
+
+def create_encoding_SDPs(error_proc_tensors, kets):
+    '''Create SDPs to optimize decoding for a given code and different errors.
+
+    Parameters
+    ----------
+    error_proc_tensors : list of array_like
+        Process tensors for the different error channels
+    kets : list of array_likst
+        The logical codewords of the code
+
+    '''
+    encoding_proc_tensor = make_encoding_process_tensor(kets)
+    encode_error_proc_tensors = [supops.proc_tensor_compose(
+                                    error_proc_tensor, encoding_proc_tensor)
+                                 for error_proc_tensor
+                                 in error_proc_tensors]
+    dim_logical = len(kets)
+    dim_encoded = kets[0].shape[0]
+    fidelity_observables = [get_fidelity_observable(
+                                encode_error_proc_tensor, dim_logical)
+                            for encode_error_proc_tensor
+                            in encode_error_proc_tensors]
+
+    Ps = [create_proc_fid_opt_SDP(fidelity_observable, dim_encoded,
+                                  dim_logical)
+          for fidelity_observable in fidelity_observables]
 
     return Ps
 
 def get_mult_2_code_kets(ket0_a, ket0_b, theta, phi, sigx_rep):
+    '''Get superposition of two different basis kets in the 0 subspace.
+
+    '''
     ket0 = np.cos(theta/2)*ket0_a + np.exp(1.j*phi)*np.sin(theta/2)*ket0_b
     ket1 = sigx_rep @ ket0
     return ket0, ket1
 
 def get_mult_2_optimal_recovery_fidelity(error_tensor, ket0_a, ket0_b, theta, phi, sigx_rep):
-    SDP = create_encoding_SDPs([error_tensor], *get_mult_2_code_kets(ket0_a, ket0_b, theta, phi, sigx_rep))[0]
+    '''Optimize the recovery fidelity for a code within a multiplicity irrep
+
+    '''
+    SDP = create_encoding_SDPs([error_tensor],
+                               get_mult_2_code_kets(ket0_a, ket0_b,
+                                                    theta, phi, sigx_rep))[0]
     SDP_soln = SDP.solve()
     return SDP_soln['obj']
