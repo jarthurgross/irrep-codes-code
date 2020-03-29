@@ -1,12 +1,14 @@
 import itertools as it
 
 import numpy as np
+from scipy.optimize import OptimizeResult
 import picos as pic
 import cvxopt as cvx
 from joblib import Parallel, delayed
 
 import pysme.integrate as integ
-import qinfo.supops as supops
+import qinfo as qi
+from qinfo import supops
 
 def get_error_tensors(Ls, H, times, solve_ivp_kwargs=None, n_jobs=1):
     integrator = integ.UncondLindbladIntegrator(Ls, H)
@@ -90,12 +92,12 @@ def create_proc_fid_opt_SDP(fidelity_observable, dim_in, dim_out):
 
     return P
 
-def create_decode_optimizing_SDP(error_proc_tensor, encode_choi_mat,
-        dim_logical):
+def create_decode_optimizing_SDP(error_proc_tensor, encode_choi_mat):
     '''Create an SDP to optimize the decoding for a given code and error.
 
     '''
     dim_encoded = error_proc_tensor.shape[0]
+    dim_logical = encode_choi_mat.shape[0] // dim_encoded
     encode_proc_tensor = supops.choi_mat_to_proc_tensor(encode_choi_mat,
                                                         dim_in=dim_logical)
     encode_error_proc_tensor = supops.proc_tensor_compose(error_proc_tensor,
@@ -110,15 +112,192 @@ def create_encode_optimizing_SDP(error_proc_tensor, decode_choi_mat):
 
     '''
     dim_encoded = error_proc_tensor.shape[0]
+    dim_logical = decode_choi_mat.shape[0] // dim_encoded
     decode_proc_tensor = supops.choi_mat_to_proc_tensor(decode_choi_mat,
                                                           dim_in=dim_encoded)
-    dim_logical = decode_proc_tensor.shape[2]
     error_decode_proc_tensor = supops.proc_tensor_compose(decode_proc_tensor,
                                                           error_proc_tensor)
     fidelity_observable = get_fidelity_observable(error_decode_proc_tensor,
                                                   dim_logical)
     return create_proc_fid_opt_SDP(fidelity_observable, dim_in=dim_logical,
                                    dim_out=dim_encoded)
+
+def biSDP_maximize(x0, x_to_y_result, y_to_x_result, args=(), maxiter=200,
+                    xatol=1e-4, yatol=None, fatol=1e-4, **options):
+    '''Bi-Semi-Definite-Program maximizer.
+
+    Optimizes two matrices, x and y, that feed into an objective function
+    f(x,y) where fixing either results in an SDP for the other.
+
+    Starting with an initial value for x, optimal value of y is solved for. Then,
+    for that value of y, the optimal value of x is solved for. This process
+    iterates until a stopping criterion is met.
+
+    Parameters
+    ----------
+
+    x0 : array_like
+        The initial value for the first quantity
+    x_to_y_result : callable
+        Function that takes a value of x and returns an OptimizeResult for the
+        solution to the y-optimization SDP
+    y_to_x_result : callable
+        Function that takes a value of y and returns an OptimizeResult for the
+        x-optimization SDP
+    maxiter : positive integer
+        The maximum number of SDPs to solve iteratively
+    xatol : float
+        The minimum difference between x values in Frobenius norm that is
+        acceptable to have between iterations
+    yatol : float
+        The minimum difference between y values in Frobenius norm that is
+        acceptable to have between iterations
+    fatol : float
+        The minimum increase in objective-function value that is
+        acceptable to have between iterations
+
+    '''
+    if yatol is None:
+        yatol = xatol
+    best_x = x0
+    result = x_to_y_result(best_x)
+    best_fun = result.fun
+    best_y = result.x
+    niter = 0
+
+    while niter < maxiter:
+        niter += 1
+        result = y_to_x_result(best_y)
+        fun = result.fun
+        x = result.x
+        if fun - best_fun < fatol or np.linalg.norm(x - best_x) < xatol:
+            break
+        best_fun = fun
+        best_x = x
+
+        niter +=1
+        result = x_to_y_result(best_x)
+        fun = result.fun
+        y = result.x
+        if fun - best_fun < fatol or np.linalg.norm(y - best_y) < yatol:
+            break
+        best_fun = fun
+        best_y = y
+
+    return OptimizeResult(fun=best_fun,
+                          x=[best_x, best_y],
+                          nit=niter, success=(niter > 1))
+
+def setup_code_biSDP(error_proc_tensor, ketLs_0):
+    '''Construct inputs for `biSDP_maximize` to optimize an encoding.
+
+    Parameters
+    ----------
+    error_proc_tensor : array_like
+        Process tensor (according to `qinfo.supops` convention) for the error
+        process to be protected against
+    ketLs_0 : list of array_like
+        Initial logical basis states to use in the optimization
+
+    Returns
+    -------
+    dict
+        The mandatory kwargs for `biSDP_maximize`
+
+    '''
+    encode_proc_tensor_0 = make_encode_process_tensor(ketLs_0)
+    encode_choi_mat_0 = supops.proc_tensor_to_choi_mat(encode_proc_tensor_0)
+
+    def encode_choi_mat_to_decode_choi_mat_result(encode_choi_mat):
+        P = create_decode_optimizing_SDP(error_proc_tensor, encode_choi_mat)
+        soln = P.solve()
+        return OptimizeResult(fun=soln['obj'], x=np.array(soln['primals']['X']))
+
+    def decode_choi_mat_to_encode_choi_mat_result(decode_choi_mat):
+        P = create_encode_optimizing_SDP(error_proc_tensor, decode_choi_mat)
+        soln = P.solve()
+        return OptimizeResult(fun=soln['obj'], x=np.array(soln['primals']['X']))
+
+    return {'x0': encode_choi_mat_0,
+            'x_to_y_result': encode_choi_mat_to_decode_choi_mat_result,
+            'y_to_x_result': decode_choi_mat_to_encode_choi_mat_result}
+
+def get_encode_isom_proc_tensor(ket0Ls, X_rep, ket0, ket1):
+    '''Create process tensor for map from logical 0 to encoding Choi matrix.
+
+    Parameters
+    ----------
+    ket0Ls : list of array_like
+        Orthonormal basis for the space of logical 0s within the irrep
+        multiplicity space
+    X_rep : array_like
+        Representative for logical X in the physical space: i exp(-i pi Jx).
+    ket0 : array_like
+        Logical 0 in the abstract logical space (usually [1, 0])
+    ket1 : array_like
+        Logical 1 in the abstract logical space (usually [0, 1])
+
+    Returns
+    -------
+    array_like
+        The process tensor for the map from logical L to the encoding Choi
+        matrix
+
+    '''
+    multiplicity = len(ket0Ls)
+    multiplicity_kets = np.eye(multiplicity)
+    V_Id = sum([np.outer(np.kron(ket0, ket0L), np.conj(multiplicity_ket))
+                for ket0L, multiplicity_ket
+                in zip(ket0Ls, multiplicity_kets)])
+    V_X = sum([np.outer(np.kron(ket1, X_rep @ ket0L), np.conj(multiplicity_ket))
+               for ket0L, multiplicity_ket
+               in zip(ket0Ls, multiplicity_kets)])
+
+    def encode_isometry(rho):
+        '''Process that takes the projector onto the logical 0 state to the Choi matrix
+        for the encoding process (that is, the unnormalized density matrix for the
+        maximally entangled state between the logical input space and the physical
+        output space).
+
+        '''
+        return (V_Id @ rho @ np.conj(V_Id).T + V_Id @ rho @ np.conj(V_X).T
+                + V_X @ rho @ np.conj(V_Id).T + V_X @ rho @ np.conj(V_X).T)
+
+    return supops.process_to_proc_tensor(encode_isometry, 2)
+
+def setup_multiplicity_code_biSDP(error_proc_tensor, ket0Ls, X_rep, ket0L_0):
+    '''Construct everything necessary to run biSDP_maximize for qubit irrep multiplicity codes
+
+    '''
+    dim_encoded = error_proc_tensor.shape[0]
+    ket0 = np.array([1, 0])
+    ket1 = np.array([0, 1])
+
+    encode_isom_proc_tensor = get_encode_isom_proc_tensor(ket0Ls, X_rep, ket0, ket1)
+
+    def rho0L_to_decode_choi_mat_result(rho0L):
+        encode_choi_mat = supops.act_proc_tensor(rho0L, encode_isom_proc_tensor)
+        P = create_decode_optimizing_SDP(error_proc_tensor, encode_choi_mat)
+        soln = P.solve()
+        return OptimizeResult(fun=soln['obj'], x=np.array(soln['primals']['X']))
+
+    def decode_choi_mat_to_rho0L_result(decoding_choi_mat):
+        decode_proc_tensor = supops.choi_mat_to_proc_tensor(decoding_choi_mat, dim_encoded)
+        error_decode_proc_tensor = supops.proc_tensor_compose(decode_proc_tensor, error_proc_tensor)
+        full_proc_tensor = supops.proc_tensor_compose(supops.tensor_proc_tensors(
+            supops.get_identity_proc_tensor(2), error_decode_proc_tensor), encode_isom_proc_tensor)
+        unnorm_max_ent_state = np.kron(ket0, ket0) + np.kron(ket1, ket1)
+        fidelity_observable = np.einsum('jkmn,m,n->jk', full_proc_tensor,
+                                        np.conj(unnorm_max_ent_state),
+                                        unnorm_max_ent_state)/4
+        P = create_proc_fid_opt_SDP(fidelity_observable, dim_in=1, dim_out=2)
+        soln = P.solve()
+        return OptimizeResult(fun=soln['obj'], x=np.array(soln['primals']['X']))
+
+    rho0L_0 = qi.rho_from_ket(ket0L_0 / np.linalg.norm(ket0L_0))
+    return {'x0': rho0L_0,
+            'x_to_y_result': rho0L_to_decode_choi_mat_result,
+            'y_to_x_result': decode_choi_mat_to_rho0L_result}
 
 def create_encoding_SDPs(error_proc_tensors, kets):
     '''Create SDPs to optimize decoding for a given code and different errors.
