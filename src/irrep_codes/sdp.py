@@ -218,12 +218,12 @@ def setup_code_biSDP(error_proc_tensor, ketLs_0):
     def encode_choi_mat_to_decode_choi_mat_result(encode_choi_mat):
         P = create_decode_optimizing_SDP(error_proc_tensor, encode_choi_mat)
         soln = P.solve()
-        return OptimizeResult(fun=soln['obj'], x=np.array(soln['primals']['X']))
+        return OptimizeResult(fun=soln.value, x=np.array(P.get_valued_variable('X')))
 
     def decode_choi_mat_to_encode_choi_mat_result(decode_choi_mat):
         P = create_encode_optimizing_SDP(error_proc_tensor, decode_choi_mat)
         soln = P.solve()
-        return OptimizeResult(fun=soln['obj'], x=np.array(soln['primals']['X']))
+        return OptimizeResult(fun=soln.value, x=np.array(P.get_valued_variable('X')))
 
     return {'x0': encode_choi_mat_0,
             'x_to_y_result': encode_choi_mat_to_decode_choi_mat_result,
@@ -286,7 +286,7 @@ def setup_multiplicity_code_biSDP(error_proc_tensor, ket0Ls, X_rep, ket0L_0):
         encode_choi_mat = supops.act_proc_tensor(rho0L, encode_isom_proc_tensor)
         P = create_decode_optimizing_SDP(error_proc_tensor, encode_choi_mat)
         soln = P.solve()
-        return OptimizeResult(fun=soln['obj'], x=np.array(soln['primals']['X']))
+        return OptimizeResult(fun=soln.value, x=np.array(P.get_valued_variable('X')))
 
     def decode_choi_mat_to_rho0L_result(decoding_choi_mat):
         decode_proc_tensor = supops.choi_mat_to_proc_tensor(decoding_choi_mat, dim_encoded)
@@ -299,7 +299,7 @@ def setup_multiplicity_code_biSDP(error_proc_tensor, ket0Ls, X_rep, ket0L_0):
                                         unnorm_max_ent_state)/4
         P = create_proc_fid_opt_SDP(fidelity_observable, dim_in=1, dim_out=2)
         soln = P.solve()
-        return OptimizeResult(fun=soln['obj'], x=np.array(soln['primals']['X']))
+        return OptimizeResult(fun=soln.value, x=np.array(P.get_valued_variable('X')))
 
     rho0L_0 = qi.rho_from_ket(ket0L_0 / np.linalg.norm(ket0L_0))
     return {'x0': rho0L_0,
@@ -351,4 +351,4 @@ def get_mult_2_optimal_recovery_fidelity(error_tensor, ket0_a, ket0_b, theta, ph
                                get_mult_2_code_kets(ket0_a, ket0_b,
                                                     theta, phi, sigx_rep))[0]
     SDP_soln = SDP.solve()
-    return SDP_soln['obj']
+    return SDP_soln.value
