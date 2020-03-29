@@ -50,7 +50,7 @@ def get_non_herm_soln_time_ind(integrator, rho0, times, solve_ivp_kwargs):
     else:
         return integrator.integrate_non_herm(rho0, times, solve_ivp_kwargs)
 
-def make_encoding_process_tensor(kets):
+def make_encode_process_tensor(kets):
     return np.array([[np.outer(ket1, ket2.conj()) for ket2 in kets]
                      for ket1 in kets])
 
@@ -90,7 +90,7 @@ def create_proc_fid_opt_SDP(fidelity_observable, dim_in, dim_out):
 
     return P
 
-def create_decoding_optimizing_SDP(error_proc_tensor, encode_choi_mat,
+def create_decode_optimizing_SDP(error_proc_tensor, encode_choi_mat,
         dim_logical):
     '''Create an SDP to optimize the decoding for a given code and error.
 
@@ -105,15 +105,15 @@ def create_decoding_optimizing_SDP(error_proc_tensor, encode_choi_mat,
     return create_proc_fid_opt_SDP(fidelity_observable, dim_in=dim_encoded,
                                    dim_out=dim_logical)
 
-def create_encoding_optimizing_SDP(error_proc_tensor, decode_choi_mat):
+def create_encode_optimizing_SDP(error_proc_tensor, decode_choi_mat):
     '''Create an SDP to optimize the encoding for a given error and decoding.
 
     '''
     dim_encoded = error_proc_tensor.shape[0]
-    decoding_proc_tensor = supops.choi_mat_to_proc_tensor(decode_choi_mat,
+    decode_proc_tensor = supops.choi_mat_to_proc_tensor(decode_choi_mat,
                                                           dim_in=dim_encoded)
-    dim_logical = decoding_proc_tensor.shape[2]
-    error_decode_proc_tensor = supops.proc_tensor_compose(decoding_proc_tensor,
+    dim_logical = decode_proc_tensor.shape[2]
+    error_decode_proc_tensor = supops.proc_tensor_compose(decode_proc_tensor,
                                                           error_proc_tensor)
     fidelity_observable = get_fidelity_observable(error_decode_proc_tensor,
                                                   dim_logical)
@@ -131,7 +131,7 @@ def create_encoding_SDPs(error_proc_tensors, kets):
         The logical codewords of the code
 
     '''
-    encoding_proc_tensor = make_encoding_process_tensor(kets)
+    encoding_proc_tensor = make_encode_process_tensor(kets)
     encode_error_proc_tensors = [supops.proc_tensor_compose(
                                     error_proc_tensor, encoding_proc_tensor)
                                  for error_proc_tensor
