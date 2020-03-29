@@ -90,6 +90,13 @@ def create_proc_fid_opt_SDP(fidelity_observable, dim_in, dim_out):
             P.add_constraint((Y[j,k]|X)
                              == (1 if j==k else 0))
 
+    # Observable for the fidelity of the recovery operation given an
+    # encoding and error channel
+    C = cvx.matrix(fidelity_observable)
+
+    # Find the Choi state for the recovery map that optimizes fidelity
+    P.set_objective('max', C|X)
+
     return P
 
 def create_decode_optimizing_SDP(error_proc_tensor, encode_choi_mat):
