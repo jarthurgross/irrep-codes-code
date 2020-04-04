@@ -93,9 +93,10 @@ def create_proc_fid_opt_SDP(fidelity_observable, dim_in, dim_out):
     # Observable for the fidelity of the recovery operation given an
     # encoding and error channel
     C = cvx.matrix(fidelity_observable)
+    F = (C + C.H)/2 # Make sure it's Hermitian
 
     # Find the Choi state for the recovery map that optimizes fidelity
-    P.set_objective('max', C|X)
+    P.set_objective('max', F|X)
 
     return P
 
@@ -236,7 +237,7 @@ def get_encode_isom_proc_tensor(ket0Ls, X_rep, ket0, ket1):
     ----------
     ket0Ls : list of array_like
         Orthonormal basis for the space of logical 0s within the irrep
-        multiplicity space
+        multiplicity space, expressed in the physical basis
     X_rep : array_like
         Representative for logical X in the physical space: i exp(-i pi Jx).
     ket0 : array_like
@@ -270,12 +271,32 @@ def get_encode_isom_proc_tensor(ket0Ls, X_rep, ket0, ket1):
         return (V_Id @ rho @ np.conj(V_Id).T + V_Id @ rho @ np.conj(V_X).T
                 + V_X @ rho @ np.conj(V_Id).T + V_X @ rho @ np.conj(V_X).T)
 
-    return supops.process_to_proc_tensor(encode_isometry, 2)
+    return supops.process_to_proc_tensor(encode_isometry, multiplicity)
 
 def setup_multiplicity_code_biSDP(error_proc_tensor, ket0Ls, X_rep, ket0L_0):
     '''Construct everything necessary to run biSDP_maximize for qubit irrep multiplicity codes
 
+    Parameters
+    ----------
+
+    error_proc_tensor : array_like
+        Process tensor for the error channel to encode against
+    ket0Ls : list of array_like
+        Orthonormal basis for the space of logical 0s within the irrep
+        multiplicity space, expressed in the physical basis
+    X_rep : array_like
+        Representative for logical X in the physical space: i exp(-i pi Jx).
+    ket0L_0 : array_like
+        Initial choice for the logical 0, expressed in the basis of `ket0Ls`
+
+    Returns
+    -------
+    dict
+        The mandatory kwargs for `biSDP_maximize`
+
     '''
+    multiplicity = len(ket0Ls)
+    dim_logical = 2
     dim_encoded = error_proc_tensor.shape[0]
     ket0 = np.array([1, 0])
     ket1 = np.array([0, 1])
@@ -292,12 +313,13 @@ def setup_multiplicity_code_biSDP(error_proc_tensor, ket0Ls, X_rep, ket0L_0):
         decode_proc_tensor = supops.choi_mat_to_proc_tensor(decoding_choi_mat, dim_encoded)
         error_decode_proc_tensor = supops.proc_tensor_compose(decode_proc_tensor, error_proc_tensor)
         full_proc_tensor = supops.proc_tensor_compose(supops.tensor_proc_tensors(
-            supops.get_identity_proc_tensor(2), error_decode_proc_tensor), encode_isom_proc_tensor)
+            supops.get_identity_proc_tensor(dim_logical), error_decode_proc_tensor), encode_isom_proc_tensor)
         unnorm_max_ent_state = np.kron(ket0, ket0) + np.kron(ket1, ket1)
         fidelity_observable = np.einsum('jkmn,m,n->jk', full_proc_tensor,
                                         np.conj(unnorm_max_ent_state),
-                                        unnorm_max_ent_state)/4
-        P = create_proc_fid_opt_SDP(fidelity_observable, dim_in=1, dim_out=2)
+                                        unnorm_max_ent_state)/(dim_logical**2)
+        P = create_proc_fid_opt_SDP(fidelity_observable, dim_in=1,
+                                    dim_out=multiplicity)
         soln = P.solve()
         return OptimizeResult(fun=soln.value, x=np.array(P.get_valued_variable('X')))
 
