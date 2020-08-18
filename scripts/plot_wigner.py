@@ -8,7 +8,7 @@ from mayavi import mlab
 import qinfo as qi
 from scipy.linalg import expm
 
-PRL_COLUMN_WIDTH = 3.404
+PRL_COLUMN_WIDTH = 3.404 # Width of a PRL column in inches
 
 def setup_ico_triangulation(s, N):
     ico = viz.Icosahedron(N)
