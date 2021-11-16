@@ -77,6 +77,11 @@ def plot_code(ket0, ket1, fname):
                              vmin=-global_vmax, vmax=global_vmax, figure=fig)
         cam = fig.scene.camera
         cam.zoom(1.7)
+        # Begin fix I don't understand from
+        # https://github.com/enthought/mayavi/issues/702#issuecomment-412546819
+        f = mlab.gcf()
+        f.scene._lift()
+        # End fix I don't understand
         imgmaps.append(mlab.screenshot(figure=fig, mode='rgba',
                                        antialiased=True))
         mlab.close(fig)
