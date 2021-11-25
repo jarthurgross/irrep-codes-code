@@ -147,7 +147,7 @@ def get_product_rule_lie_algebra_representative(
 
 @attr.s(auto_attribs=True, repr=False)
 class DualSL3CRep(SL3CRep):
-    """Dual of the standard representation."""
+    """Dual of an SL3C representation."""
     original_sl3c_rep: SL3CRep
 
     def get_diagonal_op(
