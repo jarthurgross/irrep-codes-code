@@ -1,4 +1,4 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 
 requires = [
     'numpy',
@@ -16,6 +16,6 @@ setup(
     name='irrep_codes',
     version='0.1',
     install_requires=requires,
-    packages=['irrep_codes'],
+    packages=find_packages(),
     package_data={'': ['data/*.txt']},
 )
