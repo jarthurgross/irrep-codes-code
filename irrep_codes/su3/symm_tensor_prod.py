@@ -1,9 +1,10 @@
 """Work with (p, 0) SU(3) irreps in the most inefficient way possible."""
 
 import abc
-from itertools import combinations
+from itertools import chain, combinations, permutations
 from functools import reduce
-from typing import List, Tuple
+from math import factorial, prod
+from typing import Iterable, List, Tuple
 
 import attr
 import numpy as np
@@ -274,3 +275,79 @@ def make_projector_out_of_image_vectors(
     return np.array([left_singular_column_vectors[:, idx]
                      for idx in range(singular_values.size)
                      if singular_values[idx] > zero_threshold])
+
+
+def kron(factors: Iterable[np.ndarray]) -> np.ndarray:
+    return reduce(np.kron, factors, np.array(1))
+
+
+def symmetrize_trit_vector_slow_unnorm(
+    multiplicities: Tuple[int, int, int],
+) -> np.ndarray:
+    kets = np.eye(3, dtype=float)
+    canonical_ordering = sum(
+        [multiplicity * [idx] for idx, multiplicity
+         in enumerate(multiplicities)],
+        [],
+    )
+    return sum(
+        kron(kets[basis_idx] for basis_idx in ordering)
+        for ordering in permutations(canonical_ordering)
+    )
+
+
+def symmetrization_norm_squared(multiplicities: Tuple[int, int, int]) -> int:
+    return (
+        factorial(sum(multiplicities)) * prod(map(factorial, multiplicities))
+    )
+
+
+def get_symmetric_su3_matrix_element_slow(
+    left_multiplicities: Tuple[int, int, int],
+    unitary_matrix: np.ndarray,
+    right_multiplicities: Tuple[int, int, int],
+) -> complex:
+    left_tensor_power = sum(left_multiplicities)
+    right_tensor_power = sum(right_multiplicities)
+    if left_tensor_power != right_tensor_power:
+        raise ValueError('Left and right tensor powers should be equal.')
+    tensor_power = left_tensor_power
+    left_symmetrized_vector = symmetrize_trit_vector_slow_unnorm(
+        left_multiplicities
+    )
+    right_symmetrized_vector = symmetrize_trit_vector_slow_unnorm(
+        right_multiplicities
+    )
+    left_norm_squared = symmetrization_norm_squared(left_multiplicities)
+    right_norm_squared = symmetrization_norm_squared(right_multiplicities)
+    return (
+        left_symmetrized_vector @ kron(tensor_power * [unitary_matrix])
+        @ right_symmetrized_vector / np.sqrt(
+            left_norm_squared * right_norm_squared
+        )
+    )
+
+
+def partitions(total: int, boxes: int) -> Iterable[Tuple[int, ...]]:
+    if boxes == 1:
+        return [(total,)]
+    return chain(
+        *[[partition + (last_box_pop,) for partition
+           in partitions(total - last_box_pop, boxes - 1)]
+          for last_box_pop in range(total + 1)]
+    )
+
+
+def make_su3_unitary_representative_slow(
+    unitary_matrix: np.ndarray,
+    symmetrized_copies: int,
+) -> np.ndarray:
+    return np.array(
+        [[get_symmetric_su3_matrix_element_slow(
+            left_multiplicities,
+            unitary_matrix,
+            right_multiplicities,
+        )
+          for right_multiplicities in partitions(symmetrized_copies, 3)]
+         for left_multiplicities in partitions(symmetrized_copies, 3)]
+    )
