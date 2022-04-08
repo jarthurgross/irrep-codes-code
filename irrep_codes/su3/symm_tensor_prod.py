@@ -9,6 +9,8 @@ from typing import Iterable, List, Tuple
 import attr
 import numpy as np
 
+from irrep_codes.su3.combinatorics import partitions
+
 
 class SL3CRep(abc.ABC):
     """Special-linear Lie algebra of 3 complex dimensions."""
@@ -313,20 +315,6 @@ def get_symmetric_su3_matrix_element_slow(
         @ kron(tensor_power * [unitary_matrix])
         @ right_symmetrized_vector
         / np.sqrt(left_norm_squared * right_norm_squared)
-    )
-
-
-def partitions(total: int, boxes: int) -> Iterable[Tuple[int, ...]]:
-    if boxes == 1:
-        return [(total,)]
-    return chain(
-        *[
-            [
-                partition + (last_box_pop,)
-                for partition in partitions(total - last_box_pop, boxes - 1)
-            ]
-            for last_box_pop in range(total + 1)
-        ]
     )
 
 
