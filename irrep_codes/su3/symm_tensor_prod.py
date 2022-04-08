@@ -278,7 +278,7 @@ def kron(factors: Iterable[np.ndarray]) -> np.ndarray:
     return reduce(np.kron, factors, np.array(1))
 
 
-def symmetrize_trit_vector_slow_unnorm(
+def symmetrize_trit_vector_unnorm(
     multiplicities: Tuple[int, int, int],
 ) -> np.ndarray:
     kets = np.eye(3, dtype=float)
@@ -296,7 +296,7 @@ def symmetrization_norm_squared(multiplicities: Tuple[int, int, int]) -> int:
     return factorial(sum(multiplicities)) * prod(map(factorial, multiplicities))
 
 
-def get_symmetric_su3_matrix_element_slow(
+def get_symmetric_su3_matrix_element(
     left_multiplicities: Tuple[int, int, int],
     unitary_matrix: np.ndarray,
     right_multiplicities: Tuple[int, int, int],
@@ -306,8 +306,8 @@ def get_symmetric_su3_matrix_element_slow(
     if left_tensor_power != right_tensor_power:
         raise ValueError("Left and right tensor powers should be equal.")
     tensor_power = left_tensor_power
-    left_symmetrized_vector = symmetrize_trit_vector_slow_unnorm(left_multiplicities)
-    right_symmetrized_vector = symmetrize_trit_vector_slow_unnorm(right_multiplicities)
+    left_symmetrized_vector = symmetrize_trit_vector_unnorm(left_multiplicities)
+    right_symmetrized_vector = symmetrize_trit_vector_unnorm(right_multiplicities)
     left_norm_squared = symmetrization_norm_squared(left_multiplicities)
     right_norm_squared = symmetrization_norm_squared(right_multiplicities)
     return (
@@ -318,14 +318,14 @@ def get_symmetric_su3_matrix_element_slow(
     )
 
 
-def make_su3_unitary_representative_slow(
+def make_su3_unitary_representative(
     unitary_matrix: np.ndarray,
     symmetrized_copies: int,
 ) -> np.ndarray:
     return np.array(
         [
             [
-                get_symmetric_su3_matrix_element_slow(
+                get_symmetric_su3_matrix_element(
                     left_multiplicities,
                     unitary_matrix,
                     right_multiplicities,
