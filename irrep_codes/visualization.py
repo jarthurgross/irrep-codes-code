@@ -8,12 +8,16 @@ import numpy as np
 def complex_hinton(
     matrix: np.ndarray,
     cmap: mpl.colors.Colormap = plt.cm.hsv,
+    normalization: Optional[float] = None,
+    max_square_frac: float = 0.9375,
     ax: Optional[plt.Axes] = None,
 ) -> None:
     ax = ax if ax is not None else plt.gca()
     normalized_angles = (np.angle(matrix) % (2 * np.pi)) / (2 * np.pi)
     lengths = np.sqrt(np.abs(matrix))
-    normalized_lengths = lengths / np.max(lengths)
+    if normalization is None:
+        normalization = np.max(lengths)
+    normalized_lengths = max_square_frac * lengths / normalization
     num_rows, _ = matrix.shape
     for (row, col), length in np.ndenumerate(normalized_lengths):
         color = cmap(normalized_angles[row, col])
@@ -68,6 +72,7 @@ def cyclic_cbar(
     outer_radius: float = 1.0,
     cmap: mpl.colors.Colormap = plt.cm.hsv,
     border_color: str = "k",
+    border_width: float = 1.0,
     ax: Optional[plt.Axes] = None,
 ) -> None:
     triangulation = make_annulus_triangulation(
@@ -90,11 +95,13 @@ def cyclic_cbar(
         inner_radius * np.cos(angles),
         inner_radius * np.sin(angles),
         color=border_color,
+        linewidth=border_width,
     )
     ax.plot(
         outer_radius * np.cos(angles),
         outer_radius * np.sin(angles),
         color=border_color,
+        linewidth=border_width,
     )
     ax.set_aspect("equal")
     ax.axis("off")
@@ -103,10 +110,12 @@ def cyclic_cbar(
 def complex_hinton_plot(
     matrix: np.ndarray,
     cmap: plt.Axes = plt.cm.hsv,
+    normalization: Optional[float] = None,
+    max_square_frac: float = 0.9375,
     border_color: str = "k",
     axs: Optional[Tuple[plt.Axes, plt.Axes]] = None,
 ) -> None:
     if axs is None:
         _, axs = plt.subplots(ncols=2)
-    complex_hinton(matrix=matrix, cmap=cmap, ax=axs[0])
+    complex_hinton(matrix=matrix, cmap=cmap, normalization=normalization, ax=axs[0])
     cyclic_cbar(cmap=cmap, border_color=border_color, ax=axs[1])
