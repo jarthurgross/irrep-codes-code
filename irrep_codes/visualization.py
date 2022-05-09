@@ -119,3 +119,111 @@ def complex_hinton_plot(
         _, axs = plt.subplots(ncols=2)
     complex_hinton(matrix=matrix, cmap=cmap, normalization=normalization, ax=axs[0])
     cyclic_cbar(cmap=cmap, border_color=border_color, ax=axs[1])
+
+
+def make_hexagon(
+    center: Tuple[float, float],
+    corner: Tuple[float, float],
+    **kwargs,
+) -> mpl.patches.Polygon:
+    """Make a hexagon at a particular position and orientation.
+
+    Parameters
+    ----------
+    center
+        The x/y coordinates for the center of the hexagon.
+    corner
+        The x/y coordinates for one of the corners of the hexagon.
+
+    Returns
+    -------
+        Hexagon represented as a polygon.
+
+    """
+    displacement = np.array(corner) - np.array(center)
+    corner_angle = np.arctan2(displacement[1], displacement[0])
+    angles = np.pi * np.arange(6) / 3 + corner_angle
+    radius = np.linalg.norm(displacement)
+    unit_xy = np.stack(
+        [np.cos(angles), np.sin(angles)],
+        axis=-1,
+    )
+    return plt.Polygon(
+        np.array(center) + radius * unit_xy,
+        **kwargs,
+    )
+
+
+def triplet_coord_to_xy(triplet_coord: np.ndarray, angle0: float = 0., counterclockwise: bool = True):
+    """Project an x/y/z coordinate orthogonal to the x=y=z line.
+
+    Coordinates are projected with a scaling factor such that the point
+    (1, 0, 0) will project to a point one unit from the origin of the plane.
+
+    Parameters
+    ----------
+    triplet_coord
+        An array of x/y/z coordinates with the last axis indexing x/y/z.
+    angle0
+        The angle of displacement in the plane for the vector (1, 0, 0).
+    counterclockwise
+        Whether the angle of displacement for the vector (0, 1, 0) is rotated
+        120 degrees clockwise from the (1, 0, 0) angle (if False it is rotated
+        counterclockwise)
+
+    Returns
+    -------
+        An array of x/y coordinates for the projected points, whose last axis
+        indexes x/y.
+
+    """
+    sign = 1 if counterclockwise else -1
+    angles = angle0 + sign * 2 * np.pi * np.arange(3) / 3
+    vecs = np.stack(
+        [np.cos(angles), np.sin(angles)],
+        axis=-1,
+    )
+    return triplet_coord @ vecs
+
+
+def complex_hex_hinton(
+    values: np.ndarray,
+    triplet_coords: np.ndarray,
+    cmap: mpl.colors.Colormap = plt.cm.hsv,
+    normalization: Optional[float] = None,
+    max_hex_frac: float = 0.9375,
+    ax: Optional[plt.Axes] = None,
+) -> None:
+    """Plot a complex Hinton diagram with hexagons centered at given points.
+
+    Centers of the hexagons are provided in triplet form such that triangular
+    grids may be naturally supplied.
+
+    Parameters
+    ----------
+    values
+        Complex values to be represented.
+    triplet_coords
+        x/y/z coordinates specifying where to center the hexagons. These values
+        will be projected to a plane according to the default settings for
+        `triplet_coord_to_xy`.
+    """
+    ax = ax if ax is not None else plt.gca()
+    normalized_angles = (np.angle(values) % (2 * np.pi)) / (2 * np.pi)
+    lengths = np.sqrt(np.abs(values))
+    if normalization is None:
+        normalization = np.max(lengths)
+    normalized_lengths = max_hex_frac * lengths / normalization
+    xys = triplet_coord_to_xy(triplet_coords, angle0=np.pi / 2)
+    for xy, length, angle in zip(xys, normalized_lengths, normalized_angles):
+        color = cmap(angle)
+        hexagon = make_hexagon(
+            center=tuple(xy),
+            corner=xy + length * np.array([0, 1]),
+            facecolor=color,
+            edgecolor=(0, 0, 0, 0),
+        )
+        ax.add_patch(hexagon)
+    ax.patch.set_facecolor((0, 0, 0, 0))
+    ax.autoscale_view()
+    ax.set_aspect("equal")
